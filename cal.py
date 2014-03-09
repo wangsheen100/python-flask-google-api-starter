@@ -18,8 +18,11 @@ import json
 from apiclient.discovery import build_from_document, build
 import httplib2
 import random
-
+from oauth2client import client
 from oauth2client.client import OAuth2WebServerFlow
+
+
+from flask import jsonify
 
 from flask import Flask, render_template, session, request, redirect, url_for, abort
 
@@ -65,13 +68,19 @@ def oauth2callback():
     # store these credentials for the current user in the session
     # This stores them in a cookie, which is insecure. Update this
     # with something better if you deploy to production land
-    session['credentials'] = credentials
+    session['credentials'] = credentials.to_json()
 
   return redirect(url_for('index'))
 
 @app.route('/')
 def index():
-  credentials = session['credentials']
+
+  try:
+    credentials = client.Credentials.new_from_json(session['credentials'])
+
+  except KeyError:
+    credentials = None
+
   if credentials == None:
     return redirect(url_for('login'))
 
@@ -80,7 +89,37 @@ def index():
   service = build("calendar", "v3", http=http)
   calendar_list = service.calendarList().list().execute()
 
-  return render_template("index.html", calendar_list=calendar_list)
+
+  page_token = None
+  while True:
+    mycalendar_list = service.calendarList().list(pageToken=page_token).execute()
+    for calendar_list_entry in mycalendar_list['items']:
+      print calendar_list_entry['summary']
+      epage_token = None
+      while True:
+        events = service.events().list(calendarId=calendar_list_entry['id'], pageToken=epage_token).execute()
+        for event in events['items']:
+          try:
+            print event['summary']
+          except KeyError:
+            print "no summary here"
+            continue
+            
+        epage_token = events.get('nextPageToken')
+        if not epage_token:
+          break
+
+        page_token = mycalendar_list.get('nextPageToken')
+    if not page_token:
+      break
+
+
+  for calendar_list_entry in calendar_list['items']:
+    print calendar_list_entry['id']
+    service.events()
+  #print calendar_list 
+
+  return render_template("index.html", calendar_list=events)
 
 if __name__ == '__main__':
   app.secret_key = 'hello world'
